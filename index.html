@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Bite Game</title>
+  <title>Canvas LMS</title>
   <style>
     body {
       margin: 0;
@@ -17,7 +17,7 @@
     }
     canvas {
       border: 3px solid #e94560;
-      background: #ffffff; /* White background so black line art shows clearly */
+      background: #ffffff;
     }
   </style>
 </head>
@@ -44,12 +44,12 @@
       return img;
     });
 
-    // 2. Player & Animation settings
+    // 2. Player & Animation settings (Smaller 40x40 size)
     let player = {
-      x: 260,
-      y: 160,
-      width: 80,
-      height: 80,
+      x: 280,
+      y: 180,
+      width: 40,
+      height: 40,
       speed: 5
     };
 
@@ -67,9 +67,9 @@
 
       // Trigger bite animation on Spacebar (only if not already biting)
       if (e.code === "Space" && !isBiting) {
-        e.preventDefault(); // Prevents page from scrolling
+        e.preventDefault();
         isBiting = true;
-        currentFrame = 1; // Jump immediately to player-bite-frame1.png
+        currentFrame = 1;
         frameTimer = 0;
       }
     });
@@ -80,7 +80,6 @@
 
     // 4. Update movement and animation timing
     function update(deltaTime) {
-      // Movement
       if (keys["ArrowUp"] || keys["w"] || keys["W"]) player.y -= player.speed;
       if (keys["ArrowDown"] || keys["s"] || keys["S"]) player.y += player.speed;
       if (keys["ArrowLeft"] || keys["a"] || keys["A"]) player.x -= player.speed;
@@ -97,7 +96,6 @@
           frameTimer -= frameInterval;
           currentFrame++;
 
-          // After frame 3, reset back to idle (player.png)
           if (currentFrame > 3) {
             currentFrame = 0;
             isBiting = false;
@@ -114,13 +112,12 @@
       if (activeImg.complete && activeImg.naturalWidth !== 0) {
         ctx.drawImage(activeImg, player.x, player.y, player.width, player.height);
       } else {
-        // Fallback box if an image hasn't loaded yet
         ctx.fillStyle = "#333";
         ctx.fillRect(player.x, player.y, player.width, player.height);
       }
     }
 
-    // 6. Main game loop with accurate delta-time tracking
+    // 6. Main game loop
     let lastTime = 0;
     function loop(timestamp) {
       const deltaTime = timestamp - lastTime;
