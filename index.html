@@ -30,34 +30,38 @@
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
 
-    // 1. Load your 4 animation frames
-    const frameFiles = [
-      "player.png",
-      "player-bite-frame1.png",
-      "player-bite-frame2.png",
-      "player-bite-frame3.png"
-    ];
-
-    const frames = frameFiles.map(src => {
+    // 1. Load idle, single walk sprite, and bite frames
+    function loadImg(src) {
       const img = new Image();
       img.src = src;
       return img;
-    });
+    }
 
-    // 2. Player & Animation settings (Balanced 48x48 size)
+    const idleImg = loadImg("player.png");
+    const walkImg = loadImg("player-walk-frame1.png");
+    const biteFrames = [
+      loadImg("player-bite-frame1.png"),
+      loadImg("player-bite-frame2.png"),
+      loadImg("player-bite-frame3.png")
+    ];
+
+    // 2. Player & Animation settings
     let player = {
       x: canvas.width / 2 - 24,
       y: canvas.height / 2 - 24,
       width: 48,
       height: 48,
-      speed: 2.5
+      speed: 2.5,
+      facingLeft: false
     };
 
-    let currentFrame = 0;
     let isBiting = false;
-    let frameTimer = 0;
+    let biteIndex = 0;
+    let biteTimer = 0;
+    let isMoving = false;
+
     const fps = 10;
-    const frameInterval = 1000 / fps;
+    const frameInterval = 1000 / fps; // 100ms per frame (10 FPS)
 
     let keys = {};
 
@@ -68,8 +72,8 @@
       if (e.code === "Space" && !isBiting) {
         e.preventDefault();
         isBiting = true;
-        currentFrame = 1;
-        frameTimer = 0;
+        biteIndex = 0;
+        biteTimer = 0;
       }
     });
 
@@ -77,43 +81,83 @@
       keys[e.key] = false;
     });
 
-    // 4. Update movement and animation timing
+    // 4. Update movement, direction, and bite animation timing
     function update(deltaTime) {
-      if (keys["ArrowUp"] || keys["w"] || keys["W"]) player.y -= player.speed;
-      if (keys["ArrowDown"] || keys["s"] || keys["S"]) player.y += player.speed;
-      if (keys["ArrowLeft"] || keys["a"] || keys["A"]) player.x -= player.speed;
-      if (keys["ArrowRight"] || keys["d"] || keys["D"]) player.x += player.speed;
+      let moved = false;
+
+      if (keys["ArrowUp"] || keys["w"] || keys["W"]) {
+        player.y -= player.speed;
+        moved = true;
+      }
+      if (keys["ArrowDown"] || keys["s"] || keys["S"]) {
+        player.y += player.speed;
+        moved = true;
+      }
+      if (keys["ArrowLeft"] || keys["a"] || keys["A"]) {
+        player.x -= player.speed;
+        player.facingLeft = true;
+        moved = true;
+      }
+      if (keys["ArrowRight"] || keys["d"] || keys["D"]) {
+        player.x += player.speed;
+        player.facingLeft = false;
+        moved = true;
+      }
+
+      isMoving = moved;
 
       // Keep player inside the full screen edges
       player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
       player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
 
-      // 10 FPS Bite Animation logic
+      // 10 FPS Bite Animation
       if (isBiting) {
-        frameTimer += deltaTime;
-        if (frameTimer >= frameInterval) {
-          frameTimer -= frameInterval;
-          currentFrame++;
+        biteTimer += deltaTime;
+        if (biteTimer >= frameInterval) {
+          biteTimer -= frameInterval;
+          biteIndex++;
 
-          if (currentFrame > 3) {
-            currentFrame = 0;
+          if (biteIndex >= biteFrames.length) {
+            biteIndex = 0;
             isBiting = false;
           }
         }
       }
     }
 
-    // 5. Draw everything
+    // 5. Draw everything (with horizontal flip support)
     function draw() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-      const activeImg = frames[currentFrame];
-      if (activeImg.complete && activeImg.naturalWidth !== 0) {
-        ctx.drawImage(activeImg, player.x, player.y, player.width, player.height);
-      } else {
-        ctx.fillStyle = "#333";
-        ctx.fillRect(player.x, player.y, player.width, player.height);
+      let activeImg = idleImg;
+      if (isBiting) {
+        activeImg = biteFrames[biteIndex];
+      } else if (isMoving) {
+        activeImg = walkImg;
       }
+
+      ctx.save();
+
+      if (player.facingLeft) {
+        ctx.translate(player.x + player.width, player.y);
+        ctx.scale(-1, 1);
+
+        if (activeImg.complete && activeImg.naturalWidth !== 0) {
+          ctx.drawImage(activeImg, 0, 0, player.width, player.height);
+        } else {
+          ctx.fillStyle = "#333";
+          ctx.fillRect(0, 0, player.width, player.height);
+        }
+      } else {
+        if (activeImg.complete && activeImg.naturalWidth !== 0) {
+          ctx.drawImage(activeImg, player.x, player.y, player.width, player.height);
+        } else {
+          ctx.fillStyle = "#333";
+          ctx.fillRect(player.x, player.y, player.width, player.height);
+        }
+      }
+
+      ctx.restore();
     }
 
     // 6. Main game loop
