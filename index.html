@@ -9,13 +9,99 @@
       padding: 0;
       overflow: hidden;
       background: #ffffff;
+      font-family: system-ui, -apple-system, sans-serif;
+      user-select: none;
     }
     canvas {
       display: block;
     }
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.96);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      z-index: 10;
+    }
+    .hidden {
+      display: none !important;
+    }
+    button {
+      padding: 14px 36px;
+      font-size: 20px;
+      font-weight: bold;
+      cursor: pointer;
+      background: #222;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      transition: background 0.15s;
+    }
+    button:hover:not(:disabled) {
+      background: #444;
+    }
+    button:disabled {
+      background: #aaa;
+      cursor: not-allowed;
+    }
+    .box {
+      background: #f4f4f4;
+      border: 2px solid #222;
+      padding: 20px 30px;
+      border-radius: 10px;
+      text-align: center;
+      max-width: 360px;
+    }
+    #hud {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 2px solid #222;
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 16px;
+      font-weight: bold;
+      display: flex;
+      gap: 20px;
+      z-index: 5;
+    }
   </style>
 </head>
 <body>
+
+  <!-- Title Screen (No game name, just Play & Controls) -->
+  <div id="title-screen" class="overlay">
+    <button id="play-btn">Play</button>
+    <button id="controls-btn">Controls</button>
+    <div id="controls-panel" class="box hidden">
+      <p><strong>Move:</strong> WASD or Arrow Keys</p>
+      <p><strong>Bite:</strong> Spacebar (1s cooldown)</p>
+      <p style="margin-bottom:0;">Defeat each wave of enemies to earn points for upgrades!</p>
+    </div>
+  </div>
+
+  <!-- Between-Wave Upgrade Shop -->
+  <div id="shop-screen" class="overlay hidden">
+    <h2 id="wave-complete-text" style="margin:0;">Wave 1 Complete!</h2>
+    <p id="shop-stats" style="font-size:18px; margin:4px 0;">Health: 20 / 20 | Points: 1</p>
+    <div class="box" style="display:flex; flex-direction:column; gap:12px;">
+      <button id="buy-heal-btn">Heal +5 HP (3 Points)</button>
+      <button id="buy-maxhp-btn">Max Health +3 HP (5 Points)</button>
+    </div>
+    <button id="next-wave-btn" style="background:#0969da;">Start Next Wave</button>
+  </div>
+
+  <!-- Top-Left HUD -->
+  <div id="hud" class="hidden">
+    <span id="hud-hp">HP: 20 / 20</span>
+    <span id="hud-wave">Wave: 1</span>
+    <span id="hud-points">Points: 0</span>
+    <span id="hud-bite">Bite: Ready</span>
+  </div>
 
   <canvas id="game"></canvas>
 
@@ -30,7 +116,7 @@
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
 
-    // 1. Load idle, single walk sprite, and bite frames
+    // 1. Load Player & Enemy Sprites
     function loadImg(src) {
       const img = new Image();
       img.src = src;
@@ -45,14 +131,25 @@
       loadImg("player-bite-frame3.png")
     ];
 
-    // 2. Player & Animation settings
+    const enemyIdleImg = loadImg("enemy-idle.png");
+    const enemyMoveImg = loadImg("enemy-move.png");
+    const enemyAttackImg = loadImg("enemy-attack.png");
+
+    // 2. Game State
+    let gameState = "TITLE"; // TITLE, PLAYING, SHOP
+    let wave = 1;
+    let points = 0;
+
     let player = {
-      x: canvas.width / 2 - 24,
-      y: canvas.height / 2 - 24,
+      x: 0,
+      y: 0,
       width: 48,
       height: 48,
       speed: 2.5,
-      facingLeft: false
+      facingLeft: false,
+      hp: 20,
+      maxHp: 20,
+      biteCooldown: 0 // in ms
     };
 
     let isBiting = false;
@@ -61,20 +158,154 @@
     let isMoving = false;
 
     const fps = 10;
-    const frameInterval = 1000 / fps; // 100ms per frame (10 FPS)
+    const frameInterval = 1000 / fps; // 100ms per frame
 
+    let enemies = [];
     let keys = {};
 
-    // 3. Keyboard controls
+    // UI Elements
+    const titleScreen = document.getElementById("title-screen");
+    const controlsPanel = document.getElementById("controls-panel");
+    const shopScreen = document.getElementById("shop-screen");
+    const hud = document.getElementById("hud");
+
+    document.getElementById("controls-btn").addEventListener("click", () => {
+      controlsPanel.classList.toggle("hidden");
+    });
+
+    document.getElementById("play-btn").addEventListener("click", () => {
+      startNewGame();
+    });
+
+    document.getElementById("buy-heal-btn").addEventListener("click", () => {
+      if (points >= 3 && player.hp < player.maxHp) {
+        points -= 3;
+        player.hp = Math.min(player.maxHp, player.hp + 5);
+        updateShopUI();
+      }
+    });
+
+    document.getElementById("buy-maxhp-btn").addEventListener("click", () => {
+      if (points >= 5) {
+        points -= 5;
+        player.maxHp += 3;
+        player.hp += 3;
+        updateShopUI();
+      }
+    });
+
+    document.getElementById("next-wave-btn").addEventListener("click", () => {
+      wave++;
+      shopScreen.classList.add("hidden");
+      hud.classList.remove("hidden");
+      gameState = "PLAYING";
+      spawnWave(wave);
+    });
+
+    function startNewGame() {
+      wave = 1;
+      points = 0;
+      player.maxHp = 20;
+      player.hp = 20;
+      player.biteCooldown = 0;
+      player.x = canvas.width / 2 - player.width / 2;
+      player.y = canvas.height / 2 - player.height / 2;
+      isBiting = false;
+
+      titleScreen.classList.add("hidden");
+      shopScreen.classList.add("hidden");
+      hud.classList.remove("hidden");
+      gameState = "PLAYING";
+      spawnWave(wave);
+    }
+
+    function returnToTitle() {
+      gameState = "TITLE";
+      enemies = [];
+      hud.classList.add("hidden");
+      shopScreen.classList.add("hidden");
+      titleScreen.classList.remove("hidden");
+    }
+
+    function openShop() {
+      gameState = "SHOP";
+      points += wave; // Award points equal to the wave number
+      hud.classList.add("hidden");
+      shopScreen.classList.remove("hidden");
+      updateShopUI();
+    }
+
+    function updateShopUI() {
+      document.getElementById("wave-complete-text").innerText = `Wave ${wave} Complete! (+${wave} Points)`;
+      document.getElementById("shop-stats").innerText = `Health: ${player.hp} / ${player.maxHp} | Points: ${points}`;
+      document.getElementById("buy-heal-btn").disabled = (points < 3 || player.hp >= player.maxHp);
+      document.getElementById("buy-maxhp-btn").disabled = (points < 5);
+    }
+
+    // 3. Spawn Enemies (Wave * 5)
+    function spawnWave(waveNum) {
+      enemies = [];
+      const count = waveNum * 5;
+
+      for (let i = 0; i < count; i++) {
+        let ex, ey, dist;
+        // Spawn away from the player so they don't instantly hit you
+        do {
+          ex = Math.random() * (canvas.width - 48);
+          ey = Math.random() * (canvas.height - 48);
+          dist = Math.hypot(ex - player.x, ey - player.y);
+        } while (dist < 160);
+
+        enemies.push({
+          x: ex,
+          y: ey,
+          width: 48,
+          height: 48,
+          speed: 1.3,
+          hp: 2, // Takes 2 bites to defeat
+          state: "IDLE", // IDLE, MOVE, ATTACK
+          facingLeft: false,
+          attackCooldown: 0,
+          attackAnimTimer: 0
+        });
+      }
+    }
+
+    // 4. Keyboard Controls & Bite Hit Detection
     window.addEventListener("keydown", e => {
       keys[e.key] = true;
 
-      if (e.code === "Space" && !isBiting) {
+      if (gameState === "PLAYING" && e.code === "Space" && !isBiting && player.biteCooldown <= 0) {
         e.preventDefault();
         isBiting = true;
-        isMoving = false; // Stop walking state immediately
+        isMoving = false;
         biteIndex = 0;
         biteTimer = 0;
+        player.biteCooldown = 1000; // 1 second cooldown
+
+        // Check if any enemies are within bite range
+        const biteRange = 65;
+        const pCenterX = player.x + player.width / 2;
+        const pCenterY = player.y + player.height / 2;
+
+        for (let i = enemies.length - 1; i >= 0; i--) {
+          const enemy = enemies[i];
+          const eCenterX = enemy.x + enemy.width / 2;
+          const eCenterY = enemy.y + enemy.height / 2;
+          const dist = Math.hypot(eCenterX - pCenterX, eCenterY - pCenterY);
+
+          if (dist <= biteRange) {
+            enemy.hp -= 1;
+            // Knockback slightly when bitten
+            const angle = Math.atan2(eCenterY - pCenterY, eCenterX - pCenterX);
+            enemy.x += Math.cos(angle) * 20;
+            enemy.y += Math.sin(angle) * 20;
+
+            if (enemy.hp <= 0) {
+              enemies.splice(i, 1);
+            }
+          }
+        }
       }
     });
 
@@ -82,11 +313,17 @@
       keys[e.key] = false;
     });
 
-    // 4. Update movement, direction, and bite animation timing
+    // 5. Update Loop
     function update(deltaTime) {
-      let moved = false;
+      if (gameState !== "PLAYING") return;
 
-      // Only allow movement when NOT biting
+      // Cooldown timers
+      if (player.biteCooldown > 0) {
+        player.biteCooldown = Math.max(0, player.biteCooldown - deltaTime);
+      }
+
+      // Player movement (locked while biting)
+      let moved = false;
       if (!isBiting) {
         if (keys["ArrowUp"] || keys["w"] || keys["W"]) {
           player.y -= player.speed;
@@ -107,75 +344,119 @@
           moved = true;
         }
       }
-
       isMoving = moved;
 
-      // Keep player inside the full screen edges
       player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
-      player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
-
-      // 10 FPS Bite Animation
-      if (isBiting) {
-        biteTimer += deltaTime;
-        if (biteTimer >= frameInterval) {
-          biteTimer -= frameInterval;
-          biteIndex++;
-
-          if (biteIndex >= biteFrames.length) {
-            biteIndex = 0;
-            isBiting = false;
-          }
-        }
-      }
-    }
-
-    // 5. Draw everything (with horizontal flip support)
-    function draw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      let activeImg = idleImg;
-      if (isBiting) {
-        activeImg = biteFrames[biteIndex];
-      } else if (isMoving) {
-        activeImg = walkImg;
-      }
-
-      ctx.save();
-
-      if (player.facingLeft) {
-        ctx.translate(player.x + player.width, player.y);
-        ctx.scale(-1, 1);
-
-        if (activeImg.complete && activeImg.naturalWidth !== 0) {
-          ctx.drawImage(activeImg, 0, 0, player.width, player.height);
-        } else {
-          ctx.fillStyle = "#333";
-          ctx.fillRect(0, 0, player.width, player.height);
-        }
-      } else {
-        if (activeImg.complete && activeImg.naturalWidth !== 0) {
-          ctx.drawImage(activeImg, player.x, player.y, player.width, player.height);
-        } else {
-          ctx.fillStyle = "#333";
-          ctx.fillRect(player.x, player.y, player.width, player.height);
-        }
-      }
-
-      ctx.restore();
-    }
-
-    // 6. Main game loop
-    let lastTime = 0;
-    function loop(timestamp) {
-      const deltaTime = timestamp - lastTime;
-      lastTime = timestamp;
-
-      update(deltaTime);
-      draw();
-      requestAnimationFrame(loop);
-    }
-
-    requestAnimationFrame(loop);
-  </script>
-</body>
-</html>
+Use code with caution.
+player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
+// 10 FPS Bite Animation
+if (isBiting) {
+biteTimer += deltaTime;
+if (biteTimer >= frameInterval) {
+biteTimer -= frameInterval;
+biteIndex++;
+if (biteIndex >= biteFrames.length) {
+biteIndex = 0;
+isBiting = false;
+}
+}
+}
+// Update Enemies
+const chaseRange = 360;  // Stops moving if player gets further than this
+const attackRange = 45;  // Distance to hit player
+for (let enemy of enemies) {
+if (enemy.attackCooldown > 0) {
+enemy.attackCooldown = Math.max(0, enemy.attackCooldown - deltaTime);
+}
+if (enemy.attackAnimTimer > 0) {
+enemy.attackAnimTimer = Math.max(0, enemy.attackAnimTimer - deltaTime);
+}
+const dx = (player.x + player.width / 2) - (enemy.x + enemy.width / 2);
+const dy = (player.y + player.height / 2) - (enemy.y + enemy.height / 2);
+const dist = Math.hypot(dx, dy);
+enemy.facingLeft = dx < 0;
+if (dist <= attackRange) {
+// Attack player if cooldown is ready
+if (enemy.attackCooldown <= 0) {
+enemy.state = "ATTACK";
+enemy.attackCooldown = 1200; // 1.2s enemy attack cooldown
+enemy.attackAnimTimer = 300; // Show attack sprite for 0.3s
+player.hp -= 2;
+if (player.hp <= 0) {
+returnToTitle();
+return;
+}
+} else if (enemy.attackAnimTimer <= 0) {
+enemy.state = "IDLE";
+}
+} else if (dist <= chaseRange) {
+// Chase player
+if (enemy.attackAnimTimer <= 0) enemy.state = "MOVE";
+enemy.x += (dx / dist) * enemy.speed;
+enemy.y += (dy / dist) * enemy.speed;
+} else {
+// Stop moving when player is too far away
+if (enemy.attackAnimTimer <= 0) enemy.state = "IDLE";
+}
+}
+// Check if Wave is Cleared
+if (enemies.length === 0) {
+openShop();
+return;
+}
+// Update HUD
+document.getElementById("hud-hp").innerText = HP: ${player.hp} / ${player.maxHp};
+document.getElementById("hud-wave").innerText = Wave: ${wave} (${enemies.length} left);
+document.getElementById("hud-points").innerText = Points: ${points};
+document.getElementById("hud-bite").innerText = player.biteCooldown > 0
+? Bite: ${(player.biteCooldown / 1000).toFixed(1)}s
+: "Bite: Ready";
+}
+// 6. Helper to draw flipped or normal sprites
+function drawSprite(img, x, y, w, h, facingLeft, fallbackColor) {
+ctx.save();
+if (facingLeft) {
+ctx.translate(x + w, y);
+ctx.scale(-1, 1);
+if (img.complete && img.naturalWidth !== 0) {
+ctx.drawImage(img, 0, 0, w, h);
+} else {
+ctx.fillStyle = fallbackColor;
+ctx.fillRect(0, 0, w, h);
+}
+} else {
+if (img.complete && img.naturalWidth !== 0) {
+ctx.drawImage(img, x, y, w, h);
+} else {
+ctx.fillStyle = fallbackColor;
+ctx.fillRect(x, y, w, h);
+}
+}
+ctx.restore();
+}
+// 7. Render Loop
+function draw() {
+ctx.clearRect(0, 0, canvas.width, canvas.height);
+if (gameState !== "PLAYING") return;
+// Draw Enemies
+for (let enemy of enemies) {
+let eImg = enemyIdleImg;
+if (enemy.state === "ATTACK") eImg = enemyAttackImg;
+else if (enemy.state === "MOVE") eImg = enemyMoveImg;
+drawSprite(eImg, enemy.x, enemy.y, enemy.width, enemy.height, enemy.facingLeft, "#d9534f");
+}
+// Draw Player
+let pImg = idleImg;
+if (isBiting) pImg = biteFrames[biteIndex];
+else if (isMoving) pImg = walkImg;
+drawSprite(pImg, player.x, player.y, player.width, player.height, player.facingLeft, "#333");
+}
+let lastTime = 0;
+function loop(timestamp) {
+const deltaTime = timestamp - lastTime;
+lastTime = timestamp;
+update(deltaTime);
+draw();
+requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
