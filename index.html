@@ -72,6 +72,7 @@
       if (e.code === "Space" && !isBiting) {
         e.preventDefault();
         isBiting = true;
+        isMoving = false; // Stop walking state immediately
         biteIndex = 0;
         biteTimer = 0;
       }
@@ -85,23 +86,26 @@
     function update(deltaTime) {
       let moved = false;
 
-      if (keys["ArrowUp"] || keys["w"] || keys["W"]) {
-        player.y -= player.speed;
-        moved = true;
-      }
-      if (keys["ArrowDown"] || keys["s"] || keys["S"]) {
-        player.y += player.speed;
-        moved = true;
-      }
-      if (keys["ArrowLeft"] || keys["a"] || keys["A"]) {
-        player.x -= player.speed;
-        player.facingLeft = true;
-        moved = true;
-      }
-      if (keys["ArrowRight"] || keys["d"] || keys["D"]) {
-        player.x += player.speed;
-        player.facingLeft = false;
-        moved = true;
+      // Only allow movement when NOT biting
+      if (!isBiting) {
+        if (keys["ArrowUp"] || keys["w"] || keys["W"]) {
+          player.y -= player.speed;
+          moved = true;
+        }
+        if (keys["ArrowDown"] || keys["s"] || keys["S"]) {
+          player.y += player.speed;
+          moved = true;
+        }
+        if (keys["ArrowLeft"] || keys["a"] || keys["A"]) {
+          player.x -= player.speed;
+          player.facingLeft = true;
+          moved = true;
+        }
+        if (keys["ArrowRight"] || keys["d"] || keys["D"]) {
+          player.x += player.speed;
+          player.facingLeft = false;
+          moved = true;
+        }
       }
 
       isMoving = moved;
