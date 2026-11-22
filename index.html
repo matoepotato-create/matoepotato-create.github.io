@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,116 +16,9 @@
     canvas {
       display: block;
     }
-    .overlay {
-      position: fixed;
-      inset: 0;
-      background: rgba(255, 255, 255, 0.96);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      gap: 20px;
-      z-index: 10;
-    }
-    .hidden {
-      display: none !important;
-    }
-    .img-btn {
-      background: transparent;
-      border: none;
-      padding: 0;
-      cursor: pointer;
-      transition: transform 0.1s;
-    }
-    .img-btn:hover {
-      transform: scale(1.06);
-    }
-    .img-btn img {
-      display: block;
-      max-width: 240px;
-      height: auto;
-    }
-    .fallback-btn, .shop-btn {
-      padding: 14px 36px;
-      font-size: 20px;
-      font-weight: bold;
-      cursor: pointer;
-      background: #222;
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      transition: background 0.15s;
-    }
-    .fallback-btn:hover, .shop-btn:hover:not(:disabled) {
-      background: #444;
-    }
-    .shop-btn:disabled {
-      background: #aaa;
-      cursor: not-allowed;
-    }
-    .box {
-      background: #f4f4f4;
-      border: 2px solid #222;
-      padding: 20px 30px;
-      border-radius: 10px;
-      text-align: center;
-      max-width: 360px;
-    }
-    #hud {
-      position: fixed;
-      top: 16px;
-      left: 16px;
-      background: rgba(255, 255, 255, 0.9);
-      border: 2px solid #222;
-      padding: 10px 16px;
-      border-radius: 8px;
-      font-size: 16px;
-      font-weight: bold;
-      display: flex;
-      gap: 20px;
-      z-index: 5;
-    }
   </style>
 </head>
 <body>
-
-  <!-- Title Screen (Uses play-button.png & controls-button.png, with text fallback) -->
-  <div id="title-screen" class="overlay">
-    <button class="img-btn" onclick="startNewGame()">
-      <img src="play-button.png" alt="Play" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-      <span class="fallback-btn" style="display:none;">Play</span>
-    </button>
-
-    <button class="img-btn" onclick="toggleControls()">
-      <img src="controls-button.png" alt="Controls" onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
-      <span class="fallback-btn" style="display:none;">Controls</span>
-    </button>
-
-    <div id="controls-panel" class="box hidden">
-      <p><strong>Move:</strong> WASD or Arrow Keys</p>
-      <p><strong>Bite:</strong> Spacebar (1s cooldown)</p>
-      <p style="margin-bottom:0;">Defeat each wave of enemies to earn points for upgrades!</p>
-    </div>
-  </div>
-
-  <!-- Between-Wave Upgrade Shop -->
-  <div id="shop-screen" class="overlay hidden">
-    <h2 id="wave-complete-text" style="margin:0;">Wave 1 Complete!</h2>
-    <p id="shop-stats" style="font-size:18px; margin:4px 0;">Health: 20 / 20 | Points: 1</p>
-    <div class="box" style="display:flex; flex-direction:column; gap:12px;">
-      <button id="buy-heal-btn" class="shop-btn" onclick="buyHeal()">Heal +5 HP (3 Points)</button>
-      <button id="buy-maxhp-btn" class="shop-btn" onclick="buyMaxHp()">Max Health +3 HP (5 Points)</button>
-    </div>
-    <button class="shop-btn" style="background:#0969da;" onclick="startNextWave()">Start Next Wave</button>
-  </div>
-
-  <!-- Top-Left HUD -->
-  <div id="hud" class="hidden">
-    <span id="hud-hp">HP: 20 / 20</span>
-    <span id="hud-wave">Wave: 1</span>
-    <span id="hud-points">Points: 0</span>
-    <span id="hud-bite">Bite: Ready</span>
-  </div>
 
   <canvas id="game"></canvas>
 
@@ -133,13 +27,13 @@
     const ctx = canvas.getContext("2d");
 
     function resizeCanvas() {
-      canvas.width = window.innerWidth || document.documentElement.clientWidth || 800;
-      canvas.height = window.innerHeight || document.documentElement.clientHeight || 600;
+      canvas.width = window.innerWidth || 800;
+      canvas.height = window.innerHeight || 600;
     }
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
 
-    // 1. Load Player & Enemy Sprites
+    // 1. Load All Sprites & UI Button Art
     function loadImg(src) {
       const img = new Image();
       img.src = src;
@@ -158,8 +52,12 @@
     const enemyMoveImg = loadImg("enemy-move.png");
     const enemyAttackImg = loadImg("enemy-attack.png");
 
+    const playBtnImg = loadImg("play-button.png");
+    const controlsBtnImg = loadImg("controls-button.png");
+
     // 2. Game State
-    let gameState = "TITLE";
+    let gameState = "TITLE"; // TITLE, PLAYING, SHOP
+    let showControls = false;
     let wave = 1;
     let points = 0;
 
@@ -186,17 +84,80 @@
     let enemies = [];
     let keys = {};
 
-    const titleScreen = document.getElementById("title-screen");
-    const controlsPanel = document.getElementById("controls-panel");
-    const shopScreen = document.getElementById("shop-screen");
-    const hud = document.getElementById("hud");
-
-    function toggleControls() {
-      controlsPanel.classList.toggle("hidden");
+    // Button Hitboxes (Calculated dynamically on screen center)
+    function getTitleButtons() {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      return {
+        play: { x: cx - 100, y: cy - 70, w: 200, h: 55 },
+        controls: { x: cx - 100, y: cy + 5, w: 200, h: 55 }
+      };
     }
 
+    function getShopButtons() {
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      return {
+        heal: { x: cx - 130, y: cy - 30, w: 260, h: 50 },
+        maxHp: { x: cx - 130, y: cy + 35, w: 260, h: 50 },
+        next: { x: cx - 130, y: cy + 110, w: 260, h: 55 }
+      };
+    }
+
+    function isInside(mx, my, rect) {
+      return mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h;
+    }
+
+    // 3. Left Mouse Button Click Handler (e.button === 0)
+    canvas.addEventListener("mousedown", e => {
+      if (e.button !== 0) return; // Strictly Left Mouse Button
+
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+
+      if (gameState === "TITLE") {
+        const btns = getTitleButtons();
+        if (isInside(mx, my, btns.play)) {
+          startNewGame();
+        } else if (isInside(mx, my, btns.controls)) {
+          showControls = !showControls;
+        }
+      } else if (gameState === "SHOP") {
+        const btns = getShopButtons();
+        if (isInside(mx, my, btns.heal) && points >= 3 && player.hp < player.maxHp) {
+          points -= 3;
+          player.hp = Math.min(player.maxHp, player.hp + 5);
+        } else if (isInside(mx, my, btns.maxHp) && points >= 5) {
+          points -= 5;
+          player.maxHp += 3;
+          player.hp += 3;
+        } else if (isInside(mx, my, btns.next)) {
+          wave++;
+          gameState = "PLAYING";
+          spawnWave(wave);
+        }
+      }
+    });
+
+    // Change cursor to pointer when hovering over clickable buttons
+    canvas.addEventListener("mousemove", e => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      let hovering = false;
+
+      if (gameState === "TITLE") {
+        const btns = getTitleButtons();
+        hovering = isInside(mx, my, btns.play) || isInside(mx, my, btns.controls);
+      } else if (gameState === "SHOP") {
+        const btns = getShopButtons();
+        hovering = isInside(mx, my, btns.heal) || isInside(mx, my, btns.maxHp) || isInside(mx, my, btns.next);
+      }
+      canvas.style.cursor = hovering ? "pointer" : "default";
+    });
+
     function startNewGame() {
-      resizeCanvas();
       wave = 1;
       points = 0;
       player.maxHp = 20;
@@ -205,35 +166,8 @@
       player.x = canvas.width / 2 - player.width / 2;
       player.y = canvas.height / 2 - player.height / 2;
       isBiting = false;
-
-      titleScreen.classList.add("hidden");
-      shopScreen.classList.add("hidden");
-      hud.classList.remove("hidden");
-      gameState = "PLAYING";
-      spawnWave(wave);
-    }
-
-    function buyHeal() {
-      if (points >= 3 && player.hp < player.maxHp) {
-        points -= 3;
-        player.hp = Math.min(player.maxHp, player.hp + 5);
-        updateShopUI();
-      }
-    }
-
-    function buyMaxHp() {
-      if (points >= 5) {
-        points -= 5;
-        player.maxHp += 3;
-        player.hp += 3;
-        updateShopUI();
-      }
-    }
-
-    function startNextWave() {
-      wave++;
-      shopScreen.classList.add("hidden");
-      hud.classList.remove("hidden");
+      showControls = false;
+      canvas.style.cursor = "default";
       gameState = "PLAYING";
       spawnWave(wave);
     }
@@ -241,27 +175,14 @@
     function returnToTitle() {
       gameState = "TITLE";
       enemies = [];
-      hud.classList.add("hidden");
-      shopScreen.classList.add("hidden");
-      titleScreen.classList.remove("hidden");
     }
 
     function openShop() {
       gameState = "SHOP";
-      points += wave;
-      hud.classList.add("hidden");
-      shopScreen.classList.remove("hidden");
-      updateShopUI();
+      points += wave; // Award points equal to wave number
     }
 
-    function updateShopUI() {
-      document.getElementById("wave-complete-text").innerText = `Wave ${wave} Complete! (+${wave} Points)`;
-      document.getElementById("shop-stats").innerText = `Health: ${player.hp} / ${player.maxHp} | Points: ${points}`;
-      document.getElementById("buy-heal-btn").disabled = (points < 3 || player.hp >= player.maxHp);
-      document.getElementById("buy-maxhp-btn").disabled = (points < 5);
-    }
-
-    // 3. Spawn Enemies safely (Wave * 5) without ever freezing
+    // 4. Spawn Enemies (Wave * 5)
     function spawnWave(waveNum) {
       enemies = [];
       const count = waveNum * 5;
@@ -294,7 +215,7 @@
       }
     }
 
-    // 4. Keyboard Controls & Bite Hit Detection
+    // 5. Keyboard Controls & Bite Hit Detection
     window.addEventListener("keydown", e => {
       keys[e.key] = true;
 
@@ -334,7 +255,7 @@
       keys[e.key] = false;
     });
 
-    // 5. Update Loop
+    // 6. Update Loop
     function update(deltaTime) {
       if (gameState !== "PLAYING") return;
 
@@ -349,82 +270,85 @@
           moved = true;
         }
         if (keys["ArrowDown"] || keys["s"] || keys["S"]) {
+          player.y += player.speed;
+          moved = true;
+        }
+        if (keys["ArrowLeft"] || keys["a"] || keys["A"]) {
+          player.x -= player.speed;
+          player.facingLeft = true;
+          moved = true;
+        }
+        if (keys["ArrowRight"] || keys["d"] || keys["D"]) {
+          player.x += player.speed;
+          player.facingLeft = false;
+          moved = true;
+        }
+      }
+      isMoving = moved;
+
+      player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
+      player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
+
+      if (isBiting) {
+        biteTimer += deltaTime;
+        if (biteTimer >= frameInterval) {
+          biteTimer -= frameInterval;
+          biteIndex++;
+          if (biteIndex >= biteFrames.length) {
+            biteIndex = 0;
+            isBiting = false;
+          }
+        }
+      }
+
+      const chaseRange = 360;
+      const attackRange = 45;
+
+      for (let enemy of enemies) {
+        if (enemy.attackCooldown > 0) {
+          enemy.attackCooldown = Math.max(0, enemy.attackCooldown - deltaTime);
+        }
+        if (enemy.attackAnimTimer > 0) {
+          enemy.attackAnimTimer = Math.max(0, enemy.attackAnimTimer - deltaTime);
+        }
+
+        const dx = (player.x + player.width / 2) - (enemy.x + enemy.width / 2);
+        const dy = (player.y + player.height / 2) - (enemy.y + enemy.height / 2);
+        const dist = Math.hypot(dx, dy);
+
+        enemy.facingLeft = dx < 0;
+
+        if (dist <= attackRange) {
+          if (enemy.attackCooldown <= 0) {
+            enemy.state = "ATTACK";
+            enemy.attackCooldown = 1200;
+            enemy.attackAnimTimer = 300;
+            player.hp -= 2;
+
+            if (player.hp <= 0) {
+              returnToTitle();
+              return;
+            }
+          } else if (enemy.attackAnimTimer <= 0) {
+            enemy.state = "IDLE";
+          }
+        } else if (dist <= chaseRange) {
+          if (enemy.attackAnimTimer <= 0) enemy.state = "MOVE";
+          enemy.x += (dx / dist) * enemy.speed;
+          enemy.y += (dy / dist) * enemy.speed;
+        } else {
+          if (enemy.attackAnimTimer <= 0) enemy.state = "IDLE";
+        }
+      }
+
+      if (enemies.length === 0) {
+        openShop();
+      }
+    }
+
+    // 7. Drawing Helpers
+    function drawSprite(img, x, y, w, h, facingLeft, fallbackColor) {
 Use code with caution.
-player.y += player.speed;
-moved = true;
-}
-if (keys["ArrowLeft"] || keys["a"] || keys["A"]) {
-player.x -= player.speed;
-player.facingLeft = true;
-moved = true;
-}
-if (keys["ArrowRight"] || keys["d"] || keys["D"]) {
-player.x += player.speed;
-player.facingLeft = false;
-moved = true;
-}
-}
-isMoving = moved;
-player.x = Math.max(0, Math.min(canvas.width - player.width, player.x));
-player.y = Math.max(0, Math.min(canvas.height - player.height, player.y));
-if (isBiting) {
-biteTimer += deltaTime;
-if (biteTimer >= frameInterval) {
-biteTimer -= frameInterval;
-biteIndex++;
-if (biteIndex >= biteFrames.length) {
-biteIndex = 0;
-isBiting = false;
-}
-}
-}
-const chaseRange = 360;
-const attackRange = 45;
-for (let enemy of enemies) {
-if (enemy.attackCooldown > 0) {
-enemy.attackCooldown = Math.max(0, enemy.attackCooldown - deltaTime);
-}
-if (enemy.attackAnimTimer > 0) {
-enemy.attackAnimTimer = Math.max(0, enemy.attackAnimTimer - deltaTime);
-}
-const dx = (player.x + player.width / 2) - (enemy.x + enemy.width / 2);
-const dy = (player.y + player.height / 2) - (enemy.y + enemy.height / 2);
-const dist = Math.hypot(dx, dy);
-enemy.facingLeft = dx < 0;
-if (dist <= attackRange) {
-if (enemy.attackCooldown <= 0) {
-enemy.state = "ATTACK";
-enemy.attackCooldown = 1200;
-enemy.attackAnimTimer = 300;
-player.hp -= 2;
-if (player.hp <= 0) {
-returnToTitle();
-return;
-}
-} else if (enemy.attackAnimTimer <= 0) {
-enemy.state = "IDLE";
-}
-} else if (dist <= chaseRange) {
-if (enemy.attackAnimTimer <= 0) enemy.state = "MOVE";
-enemy.x += (dx / dist) * enemy.speed;
-enemy.y += (dy / dist) * enemy.speed;
-} else {
-if (enemy.attackAnimTimer <= 0) enemy.state = "IDLE";
-}
-}
-if (enemies.length === 0) {
-openShop();
-return;
-}
-document.getElementById("hud-hp").innerText = HP: ${player.hp} / ${player.maxHp};
-document.getElementById("hud-wave").innerText = Wave: ${wave} (${enemies.length} left);
-document.getElementById("hud-points").innerText = Points: ${points};
-document.getElementById("hud-bite").innerText = player.biteCooldown > 0
-? Bite: ${(player.biteCooldown / 1000).toFixed(1)}s
-: "Bite: Ready";
-}
-// 6. Helper to draw flipped or normal sprites
-function drawSprite(img, x, y, w, h, facingLeft, fallbackColor) {
 ctx.save();
 if (facingLeft) {
 ctx.translate(x + w, y);
@@ -445,20 +369,89 @@ ctx.fillRect(x, y, w, h);
 }
 ctx.restore();
 }
-// 7. Render Loop
+function drawButton(rect, text, img, bgColor = "#222") {
+if (img && img.complete && img.naturalWidth !== 0) {
+ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
+} else {
+ctx.fillStyle = bgColor;
+ctx.beginPath();
+ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 8);
+ctx.fill();
+ctx.fillStyle = "#ffffff";
+ctx.font = "bold 20px system-ui, sans-serif";
+ctx.textAlign = "center";
+ctx.textBaseline = "middle";
+ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
+}
+}
+// 8. Main Render Loop
 function draw() {
 ctx.clearRect(0, 0, canvas.width, canvas.height);
-if (gameState !== "PLAYING") return;
+if (gameState === "TITLE") {
+const btns = getTitleButtons();
+drawButton(btns.play, "Play", playBtnImg);
+drawButton(btns.controls, "Controls", controlsBtnImg);
+if (showControls) {
+const cx = canvas.width / 2;
+const cy = canvas.height / 2 + 85;
+ctx.fillStyle = "#f4f4f4";
+ctx.strokeStyle = "#222";
+ctx.lineWidth = 2;
+ctx.beginPath();
+ctx.roundRect(cx - 180, cy, 360, 100, 10);
+ctx.fill();
+ctx.stroke();
+ctx.fillStyle = "#222";
+ctx.font = "16px system-ui, sans-serif";
+ctx.textAlign = "center";
+ctx.fillText("Move: WASD or Arrow Keys", cx, cy + 32);
+ctx.fillText("Bite: Spacebar (1s cooldown)", cx, cy + 62);
+}
+return;
+}
+if (gameState === "SHOP") {
+const cx = canvas.width / 2;
+const cy = canvas.height / 2;
+const btns = getShopButtons();
+ctx.fillStyle = "#222";
+ctx.font = "bold 28px system-ui, sans-serif";
+ctx.textAlign = "center";
+ctx.fillText(Wave ${wave} Complete! (+${wave} Points), cx, cy - 110);
+ctx.font = "18px system-ui, sans-serif";
+ctx.fillText(Health: ${player.hp} / ${player.maxHp}   |   Points: ${points}, cx, cy - 70);
+const canHeal = points >= 3 && player.hp < player.maxHp;
+const canMaxHp = points >= 5;
+drawButton(btns.heal, "Heal +5 HP (3 Pts)", null, canHeal ? "#222" : "#aaa");
+drawButton(btns.maxHp, "Max Health +3 HP (5 Pts)", null, canMaxHp ? "#222" : "#aaa");
+drawButton(btns.next, "Start Next Wave", null, "#0969da");
+return;
+}
+// Draw Enemies
 for (let enemy of enemies) {
 let eImg = enemyIdleImg;
 if (enemy.state === "ATTACK") eImg = enemyAttackImg;
 else if (enemy.state === "MOVE") eImg = enemyMoveImg;
 drawSprite(eImg, enemy.x, enemy.y, enemy.width, enemy.height, enemy.facingLeft, "#d9534f");
 }
+// Draw Player
 let pImg = idleImg;
 if (isBiting) pImg = biteFrames[biteIndex];
 else if (isMoving) pImg = walkImg;
 drawSprite(pImg, player.x, player.y, player.width, player.height, player.facingLeft, "#333");
+// Draw Top-Left HUD
+ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+ctx.strokeStyle = "#222";
+ctx.lineWidth = 2;
+ctx.beginPath();
+ctx.roundRect(16, 16, 460, 42, 8);
+ctx.fill();
+ctx.stroke();
+ctx.fillStyle = "#222";
+ctx.font = "bold 15px system-ui, sans-serif";
+ctx.textAlign = "left";
+ctx.textBaseline = "middle";
+const biteText = player.biteCooldown > 0 ? Bite: ${(player.biteCooldown / 1000).toFixed(1)}s : "Bite: Ready";
+ctx.fillText(HP: ${player.hp}/${player.maxHp}   |   Wave: ${wave} (${enemies.length} left)   |   Pts: ${points}   |   ${biteText}, 28, 37);
 }
 let lastTime = 0;
 function loop(timestamp) {
@@ -469,3 +462,5 @@ draw();
 requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
+
+
