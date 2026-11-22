@@ -1,349 +1,151 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>Canvas LMS</title>
-  <style>
-    html, body {
-      margin: 0;
-      padding: 0;
-      width: 100%;
-      height: 100%;
-      overflow: hidden;
-      background: #ffffff;
-      font-family: Arial, sans-serif;
-    }
-    canvas {
-      display: block;
-      width: 100%;
-      height: 100%;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>Canvas LMS</title>
+<style>
+  body { margin: 0; overflow: hidden; background: #fff; font-family: sans-serif; user-select: none; }
+  canvas { display: block; }
+</style>
 </head>
 <body>
-  <canvas id="game"></canvas>
+<canvas id="c"></canvas>
+<script>
+const c = document.getElementById("c"), ctx = c.getContext("2d");
+function resize() { c.width = innerWidth; c.height = innerHeight; }
+resize(); onresize = resize;
 
-  <script>
-    window.onerror = function(msg, url, line) {
-      document.body.innerHTML = "<div style='color:red;font-size:20px;padding:20px;'>Error line " + line + ": " + msg + "</div>";
-      return false;
-    };
+const img = s => { const i = new Image(); i.onerror = () => i.bad = 1; i.src = s; return i; };
+const pIdle = img("player.png"), pWalk = img("player-walk-frame1.png");
+const pBite = [img("player-bite-frame1.png"), img("player-bite-frame2.png"), img("player-bite-frame3.png")];
+const eIdle = img("enemy-idle.png"), eMove = img("enemy-move.png"), eAtk = img("enemy-attack.png");
+const btnPlay = img("play-button.png"), btnCtrl = img("controls-button.png");
 
-    var canvas = document.getElementById("game");
-    var ctx = canvas.getContext("2d");
+let state = "TITLE", showCtrl = false, wave = 1, pts = 0, enemies = [], keys = {};
+let p = { x: 0, y: 0, w: 48, h: 48, spd: 2.5, left: false, hp: 20, max: 20, cd: 0, biting: false, bIdx: 0, bT: 0, moving: false };
 
-    function resize() {
-      canvas.width = window.innerWidth || document.documentElement.clientWidth || 800;
-      canvas.height = window.innerHeight || document.documentElement.clientHeight || 600;
-    }
-    resize();
-    window.addEventListener("resize", resize);
+const btns = () => {
+  const cx = c.width / 2, cy = c.height / 2;
+  return {
+    play: { x: cx - 100, y: cy - 70, w: 200, h: 55 },
+    ctrl: { x: cx - 100, y: cy + 5, w: 200, h: 55 },
+    heal: { x: cx - 130, y: cy - 30, w: 260, h: 50 },
+    max:  { x: cx - 130, y: cy + 35, w: 260, h: 50 },
+    next: { x: cx - 130, y: cy + 110, w: 260, h: 55 }
+  };
+};
+const hit = (x, y, r) => x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
 
-    function loadImg(src) {
-      var img = new Image();
-      img.broken = false;
-      img.onerror = function() { img.broken = true; };
-      img.src = src;
-      return img;
-    }
-
-    var idleImg = loadImg("player.png");
-    var walkImg = loadImg("player-walk-frame1.png");
-    var biteFrames = [
-      loadImg("player-bite-frame1.png"),
-      loadImg("player-bite-frame2.png"),
-      loadImg("player-bite-frame3.png")
-    ];
-    var enemyIdleImg = loadImg("enemy-idle.png");
-    var enemyMoveImg = loadImg("enemy-move.png");
-    var enemyAttackImg = loadImg("enemy-attack.png");
-    var playBtnImg = loadImg("play-button.png");
-    var controlsBtnImg = loadImg("controls-button.png");
-
-    var gameState = "TITLE";
-    var showControls = false;
-    var wave = 1;
-    var points = 0;
-
-    var player = {
-      x: 200,
-      y: 200,
-      width: 48,
-      height: 48,
-      speed: 2.5,
-      facingLeft: false,
-      hp: 20,
-      maxHp: 20,
-      biteCooldown: 0
-    };
-
-    var isBiting = false;
-    var biteIndex = 0;
-    var biteTimer = 0;
-    var isMoving = false;
-    var enemies = [];
-    var keys = {};
-
-    function getBtns() {
-      var cx = canvas.width / 2;
-      var cy = canvas.height / 2;
-      return {
-        play: { x: cx - 100, y: cy - 70, w: 200, h: 55 },
-        controls: { x: cx - 100, y: cy + 5, w: 200, h: 55 },
-        heal: { x: cx - 130, y: cy - 30, w: 260, h: 50 },
-        maxHp: { x: cx - 130, y: cy + 35, w: 260, h: 50 },
-        next: { x: cx - 130, y: cy + 110, w: 260, h: 55 }
-      };
-    }
-
-    function hit(mx, my, r) {
-      return mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.h;
-    }
-
-    canvas.addEventListener("mousedown", function(e) {
-      if (e.button !== 0) return;
-      var rect = canvas.getBoundingClientRect();
-      var mx = e.clientX - rect.left;
-      var my = e.clientY - rect.top;
-      var b = getBtns();
-
-      if (gameState === "TITLE") {
-        if (hit(mx, my, b.play)) {
-          wave = 1;
-          points = 0;
-          player.maxHp = 20;
-          player.hp = 20;
-          player.biteCooldown = 0;
-          player.x = canvas.width / 2 - 24;
-          player.y = canvas.height / 2 - 24;
-          isBiting = false;
-          showControls = false;
-          gameState = "PLAYING";
-          spawnWave(1);
-        } else if (hit(mx, my, b.controls)) {
-          showControls = !showControls;
-        }
-      } else if (gameState === "SHOP") {
-        if (hit(mx, my, b.heal) && points >= 3 && player.hp < player.maxHp) {
-          points -= 3;
-          player.hp = Math.min(player.maxHp, player.hp + 5);
-        } else if (hit(mx, my, b.maxHp) && points >= 5) {
-          points -= 5;
-          player.maxHp += 3;
-          player.hp += 3;
-        } else if (hit(mx, my, b.next)) {
-          wave++;
-          gameState = "PLAYING";
-          spawnWave(wave);
-        }
-      }
-    });
-
-    function spawnWave(w) {
-      enemies = [];
-      var count = w * 5;
-      var maxW = Math.max(100, canvas.width - 48);
-      var maxH = Math.max(100, canvas.height - 48);
-
-      for (var i = 0; i < count; i++) {
-        var ex = Math.random() * maxW;
-        var ey = Math.random() * maxH;
-        var tries = 0;
-        while (Math.hypot(ex - player.x, ey - player.y) < 140 && tries < 15) {
-          ex = Math.random() * maxW;
-          ey = Math.random() * maxH;
-          tries++;
-        }
-        enemies.push({
-          x: ex,
-          y: ey,
-          width: 48,
-          height: 48,
-          speed: 1.3,
-          hp: 1,
-          state: "IDLE",
-          facingLeft: false,
-          attackCooldown: 0,
-          attackAnimTimer: 0
-        });
-      }
-    }
-
-    window.addEventListener("keydown", function(e) {
-      keys[e.key] = true;
-      if (gameState === "PLAYING" && e.code === "Space" && !isBiting && player.biteCooldown <= 0) {
-        e.preventDefault();
-        isBiting = true;
-        isMoving = false;
-        biteIndex = 0;
-        biteTimer = 0;
-        player.biteCooldown = 1000;
-
-        var px = player.x + 24;
-        var py = player.y + 24;
-        for (var i = enemies.length - 1; i >= 0; i--) {
-          var en = enemies[i];
-          var ex = en.x + 24;
-          var ey = en.y + 24;
-          if (Math.hypot(ex - px, ey - py) <= 65) {
-            enemies.splice(i, 1);
-          }
-        }
-      }
-    });
-
-    window.addEventListener("keyup", function(e) {
-      keys[e.key] = false;
-    });
-
-    function canDraw(img) {
-      return img && !img.broken && img.complete && img.naturalWidth > 0;
-    }
-
-    function drawBtn(r, label, img, col) {
-      if (canDraw(img)) {
-        ctx.drawImage(img, r.x, r.y, r.w, r.h);
-        return;
-      }
-      ctx.fillStyle = col || "#222222";
-      ctx.fillRect(r.x, r.y, r.w, r.h);
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "bold 20px Arial, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2);
-    }
-
-    function drawSprite(img, x, y, w, h, left, col) {
-      ctx.save();
-      if (left) {
-        ctx.translate(x + w, y);
-        ctx.scale(-1, 1);
-        if (canDraw(img)) {
-          ctx.drawImage(img, 0, 0, w, h);
-        } else {
-          ctx.fillStyle = col;
-          ctx.fillRect(0, 0, w, h);
-        }
-      } else {
-        if (canDraw(img)) {
-          ctx.drawImage(img, x, y, w, h);
-        } else {
-          ctx.fillStyle = col;
-          ctx.fillRect(x, y, w, h);
-        }
-      }
-      ctx.restore();
-    }
-
-    var last = 0;
-    function loop(ts) {
-      if (!last) last = ts;
-      var dt = ts - last;
-      last = ts;
-
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      var b = getBtns();
-
-      if (gameState === "TITLE") {
-        drawBtn(b.play, "Play", playBtnImg, "#222222");
-        drawBtn(b.controls, "Controls", controlsBtnImg, "#222222");
-        if (showControls) {
-          ctx.fillStyle = "#eeeeee";
-          ctx.fillRect(canvas.width / 2 - 180, canvas.height / 2 + 80, 360, 80);
-          ctx.fillStyle = "#222222";
-          ctx.font = "16px Arial, sans-serif";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText("Move: WASD / Arrows | Bite: Space (1s cooldown)", canvas.width / 2, canvas.height / 2 + 120);
-        }
-      } else if (gameState === "SHOP") {
-        ctx.fillStyle = "#222222";
-        ctx.font = "bold 26px Arial, sans-serif";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "alphabetic";
-        ctx.fillText("Wave " + wave + " Complete! (+" + wave + " Pts)", canvas.width / 2, canvas.height / 2 - 100);
-        ctx.font = "18px Arial, sans-serif";
-        ctx.fillText("HP: " + player.hp + "/" + player.maxHp + " | Points: " + points, canvas.width / 2, canvas.height / 2 - 65);
-        drawBtn(b.heal, "Heal +5 HP (3 Pts)", null, points >= 3 && player.hp < player.maxHp ? "#222222" : "#aaaaaa");
-        drawBtn(b.maxHp, "Max Health +3 (5 Pts)", null, points >= 5 ? "#222222" : "#aaaaaa");
-        drawBtn(b.next, "Next Wave", null, "#0969da");
-      } else {
-        if (player.biteCooldown > 0) player.biteCooldown = Math.max(0, player.biteCooldown - dt);
-        var moved = false;
-        if (!isBiting) {
-          if (keys["ArrowUp"] || keys["w"] || keys["W"]) { player.y -= player.speed; moved = true; }
-          if (keys["ArrowDown"] || keys["s"] || keys["S"]) { player.y += player.speed; moved = true; }
-          if (keys["ArrowLeft"] || keys["a"] || keys["A"]) { player.x -= player.speed; player.facingLeft = true; moved = true; }
-          if (keys["ArrowRight"] || keys["d"] || keys["D"]) { player.x += player.speed; player.facingLeft = false; moved = true; }
-        }
-        isMoving = moved;
-        player.x = Math.max(0, Math.min(canvas.width - 48, player.x));
-        player.y = Math.max(0, Math.min(canvas.height - 48, player.y));
-
-        if (isBiting) {
-          biteTimer += dt;
-          if (biteTimer >= 100) {
-            biteTimer -= 100;
-            biteIndex++;
-            if (biteIndex >= 3) {
-              biteIndex = 0;
-              isBiting = false;
-            }
-          }
-        }
-
-        for (var i = 0; i < enemies.length; i++) {
-          var en = enemies[i];
-          if (en.attackCooldown > 0) en.attackCooldown = Math.max(0, en.attackCooldown - dt);
-          if (en.attackAnimTimer > 0) en.attackAnimTimer = Math.max(0, en.attackAnimTimer - dt);
-
-          var dx = (player.x + 24) - (en.x + 24);
-          var dy = (player.y + 24) - (en.y + 24);
-          var dist = Math.hypot(dx, dy);
-
-          if (dx < -2) en.facingLeft = true;
-          else if (dx > 2) en.facingLeft = false;
-
-          if (dist <= 45) {
-            if (en.attackCooldown <= 0) {
-              en.state = "ATTACK";
-              en.attackCooldown = 1200;
-              en.attackAnimTimer = 300;
-              player.hp -= 2;
-              if (player.hp <= 0) {
-                gameState = "TITLE";
-                enemies = [];
-                break;
-              }
-Use code with caution.
-} else if (en.attackAnimTimer <= 0) {
-en.state = "IDLE";
+function spawnWave(w) {
+  enemies = [];
+  for (let i = 0; i < w * 5; i++) {
+    let ex, ey, t = 0;
+    do { ex = Math.random() * Math.max(50, c.width - 48); ey = Math.random() * Math.max(50, c.height - 48); t++; }
+    while (Math.hypot(ex - p.x, ey - p.y) < 140 && t < 15);
+    enemies.push({ x: ex, y: ey, spd: 1.3, st: "IDLE", left: false, cd: 0, anim: 0 });
+  }
 }
-} else if (dist <= 360) {
-if (en.attackAnimTimer <= 0) en.state = "MOVE";
-en.x += (dx / dist) * en.speed;
-en.y += (dy / dist) * en.speed;
-} else if (en.attackAnimTimer <= 0) {
-en.state = "IDLE";
+
+c.addEventListener("mousedown", e => {
+  if (e.button !== 0) return;
+  const r = c.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top, b = btns();
+  if (state === "TITLE") {
+    if (hit(mx, my, b.play)) {
+      wave = 1; pts = 0; p.max = 20; p.hp = 20; p.cd = 0; p.biting = false; showCtrl = false;
+      p.x = c.width / 2 - 24; p.y = c.height / 2 - 24; state = "PLAY"; spawnWave(1);
+    } else if (hit(mx, my, b.ctrl)) showCtrl = !showCtrl;
+  } else if (state === "SHOP") {
+    if (hit(mx, my, b.heal) && pts >= 3 && p.hp < p.max) { pts -= 3; p.hp = Math.min(p.max, p.hp + 5); }
+    else if (hit(mx, my, b.max) && pts >= 5) { pts -= 5; p.max += 3; p.hp += 3; }
+    else if (hit(mx, my, b.next)) { wave++; state = "PLAY"; spawnWave(wave); }
+  }
+});
+
+onkeydown = e => {
+  keys[e.key] = true;
+  if (state === "PLAY" && e.code === "Space" && !p.biting && p.cd <= 0) {
+    e.preventDefault(); p.biting = true; p.moving = false; p.bIdx = 0; p.bT = 0; p.cd = 1000;
+    enemies = enemies.filter(en => Math.hypot((en.x + 24) - (p.x + 24), (en.y + 24) - (p.y + 24)) > 65);
+  }
+};
+onkeyup = e => keys[e.key] = false;
+
+const ok = i => i && !i.bad && i.complete && i.naturalWidth > 0;
+function drawBtn(r, txt, im, col) {
+  if (ok(im)) return ctx.drawImage(im, r.x, r.y, r.w, r.h);
+  ctx.fillStyle = col || "#222"; ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = "#fff"; ctx.font = "bold 20px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(txt, r.x + r.w / 2, r.y + r.h / 2);
 }
-var eImg = en.state === "ATTACK" ? enemyAttackImg : (en.state === "MOVE" ? enemyMoveImg : enemyIdleImg);
-drawSprite(eImg, en.x, en.y, 48, 48, en.facingLeft, "#d9534f");
+function drawSpr(im, x, y, left, col) {
+  ctx.save();
+  if (left) { ctx.translate(x + 48, y); ctx.scale(-1, 1); x = 0; y = 0; }
+  if (ok(im)) ctx.drawImage(im, x, y, 48, 48); else { ctx.fillStyle = col; ctx.fillRect(x, y, 48, 48); }
+  ctx.restore();
 }
-if (gameState === "PLAYING" && enemies.length === 0) {
-gameState = "SHOP";
-points += wave;
-}
-var pImg = isBiting ? biteFrames[biteIndex] : (isMoving ? walkImg : idleImg);
-drawSprite(pImg, player.x, player.y, 48, 48, player.facingLeft, "#333333");
-ctx.fillStyle = "#222222";
-ctx.font = "bold 16px Arial, sans-serif";
-ctx.textAlign = "left";
-ctx.textBaseline = "alphabetic";
-var biteText = player.biteCooldown > 0 ? "Bite: " + (player.biteCooldown / 1000).toFixed(1) + "s" : "Bite: Ready";
-ctx.fillText("HP: " + player.hp + "/" + player.maxHp + "   |   Wave: " + wave + "   |   Pts: " + points + "   |   " + biteText, 20, 30);
+
+let last = 0;
+function loop(ts) {
+  const dt = last ? ts - last : 0; last = ts;
+  ctx.clearRect(0, 0, c.width, c.height);
+  const b = btns();
+
+  if (state === "TITLE") {
+    drawBtn(b.play, "Play", btnPlay); drawBtn(b.ctrl, "Controls", btnCtrl);
+    if (showCtrl) {
+      ctx.fillStyle = "#eee"; ctx.fillRect(c.width / 2 - 180, c.height / 2 + 80, 360, 70);
+      ctx.fillStyle = "#222"; ctx.font = "16px sans-serif"; ctx.textAlign = "center";
+      ctx.fillText("Move: WASD / Arrows | Bite: Space (1s cooldown)", c.width / 2, c.height / 2 + 120);
+    }
+  } else if (state === "SHOP") {
+    ctx.fillStyle = "#222"; ctx.font = "bold 26px sans-serif"; ctx.textAlign = "center";
+    ctx.fillText(`Wave ${wave} Complete! (+${wave} Pts)`, c.width / 2, c.height / 2 - 100);
+    ctx.font = "18px sans-serif";
+    ctx.fillText(`HP: ${p.hp}/${p.max} | Points: ${pts}`, c.width / 2, c.height / 2 - 65);
+    drawBtn(b.heal, "Heal +5 HP (3 Pts)", null, pts >= 3 && p.hp < p.max ? "#222" : "#aaa");
+    drawBtn(b.max, "Max Health +3 (5 Pts)", null, pts >= 5 ? "#222" : "#aaa");
+    drawBtn(b.next, "Next Wave", null, "#0969da");
+  } else {
+    if (p.cd > 0) p.cd = Math.max(0, p.cd - dt);
+    let mv = false;
+    if (!p.biting) {
+      if (keys["ArrowUp"] || keys["w"] || keys["W"]) { p.y -= p.spd; mv = true; }
+      if (keys["ArrowDown"] || keys["s"] || keys["S"]) { p.y += p.spd; mv = true; }
+      if (keys["ArrowLeft"] || keys["a"] || keys["A"]) { p.x -= p.spd; p.left = true; mv = true; }
+      if (keys["ArrowRight"] || keys["d"] || keys["D"]) { p.x += p.spd; p.left = false; mv = true; }
+    }
+    p.moving = mv;
+    p.x = Math.max(0, Math.min(c.width - 48, p.x)); p.y = Math.max(0, Math.min(c.height - 48, p.y));
+
+    if (p.biting && (p.bT += dt) >= 100) { p.bT -= 100; if (++p.bIdx >= 3) { p.bIdx = 0; p.biting = false; } }
+
+    for (let en of enemies) {
+      if (en.cd > 0) en.cd = Math.max(0, en.cd - dt);
+      if (en.anim > 0) en.anim = Math.max(0, en.anim - dt);
+      const dx = p.x - en.x, dy = p.y - en.y, d = Math.hypot(dx, dy);
+      if (dx < -2) en.left = true; else if (dx > 2) en.left = false;
+
+      if (d <= 45) {
+        if (en.cd <= 0) {
+          en.st = "ATK"; en.cd = 1200; en.anim = 300; p.hp -= 2;
+          if (p.hp <= 0) { state = "TITLE"; enemies = []; break; }
+        } else if (en.anim <= 0) en.st = "IDLE";
+      } else if (d <= 360) {
+        if (en.anim <= 0) en.st = "MOVE"; en.x += (dx / d) * en.spd; en.y += (dy / d) * en.spd;
+      } else if (en.anim <= 0) en.st = "IDLE";
+
+      drawSpr(en.st === "ATK" ? eAtk : (en.st === "MOVE" ? eMove : eIdle), en.x, en.y, en.left, "#d9534f");
+    }
+
+    if (state === "PLAY" && enemies.length === 0) { state = "SHOP"; pts += wave; }
+    drawSpr(p.biting ? pBite[p.bIdx] : (p.moving ? pWalk : pIdle), p.x, p.y, p.left, "#333");
+
+    ctx.fillStyle = "#222"; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "left";
+    ctx.fillText(`HP: ${p.hp}/${p.max} | Wave: ${wave} | Pts: ${pts} | Bite: ${p.cd > 0 ? (p.cd/1000).toFixed(1)+"s" : "Ready"}`, 20, 30);
+  }
+  requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-}
-requestAnimationFrame(loop);
-
+</script>
+</body>
+</html>
