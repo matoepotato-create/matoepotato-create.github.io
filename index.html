@@ -27,15 +27,19 @@
     const ctx = canvas.getContext("2d");
 
     function resizeCanvas() {
-      canvas.width = window.innerWidth || 800;
-      canvas.height = window.innerHeight || 600;
+      canvas.width = window.innerWidth || document.documentElement.clientWidth || 800;
+      canvas.height = window.innerHeight || document.documentElement.clientHeight || 600;
     }
     resizeCanvas();
     window.addEventListener("resize", resizeCanvas);
 
-    // 1. Load All Sprites & UI Button Art
+    // 1. Safe Image Loader (tracks broken images so they never crash drawing)
     function loadImg(src) {
       const img = new Image();
+      img.broken = false;
+      img.onerror = function() {
+        img.broken = true;
+      };
       img.src = src;
       return img;
     }
@@ -84,7 +88,6 @@
     let enemies = [];
     let keys = {};
 
-    // Button Hitboxes (Calculated dynamically on screen center)
     function getTitleButtons() {
       const cx = canvas.width / 2;
       const cy = canvas.height / 2;
@@ -108,9 +111,9 @@
       return mx >= rect.x && mx <= rect.x + rect.w && my >= rect.y && my <= rect.y + rect.h;
     }
 
-    // 3. Left Mouse Button Click Handler (e.button === 0)
-    canvas.addEventListener("mousedown", e => {
-      if (e.button !== 0) return; // Strictly Left Mouse Button
+    // 3. Left Mouse Button Click Handler
+    canvas.addEventListener("mousedown", function(e) {
+      if (e.button !== 0) return;
 
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
@@ -140,8 +143,7 @@
       }
     });
 
-    // Change cursor to pointer when hovering over clickable buttons
-    canvas.addEventListener("mousemove", e => {
+    canvas.addEventListener("mousemove", function(e) {
       const rect = canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
@@ -179,7 +181,7 @@
 
     function openShop() {
       gameState = "SHOP";
-      points += wave; // Award points equal to wave number
+      points += wave;
     }
 
     // 4. Spawn Enemies (Wave * 5)
@@ -216,7 +218,7 @@
     }
 
     // 5. Keyboard Controls & Bite Hit Detection
-    window.addEventListener("keydown", e => {
+    window.addEventListener("keydown", function(e) {
       keys[e.key] = true;
 
       if (gameState === "PLAYING" && e.code === "Space" && !isBiting && player.biteCooldown <= 0) {
@@ -251,7 +253,7 @@
       }
     });
 
-    window.addEventListener("keyup", e => {
+    window.addEventListener("keyup", function(e) {
       keys[e.key] = false;
     });
 
@@ -304,7 +306,8 @@
       const chaseRange = 360;
       const attackRange = 45;
 
-      for (let enemy of enemies) {
+      for (let i = 0; i < enemies.length; i++) {
+        const enemy = enemies[i];
         if (enemy.attackCooldown > 0) {
           enemy.attackCooldown = Math.max(0, enemy.attackCooldown - deltaTime);
         }
@@ -346,22 +349,25 @@
       }
     }
 
-    // 7. Drawing Helpers
-    function drawSprite(img, x, y, w, h, facingLeft, fallbackColor) {
 Use code with caution.
+// 7. Bulletproof Drawing Helpers
+function canDraw(img) {
+return img && !img.broken && img.complete && img.naturalWidth > 0;
+}
+function drawSprite(img, x, y, w, h, facingLeft, fallbackColor) {
 ctx.save();
 if (facingLeft) {
 ctx.translate(x + w, y);
 ctx.scale(-1, 1);
-if (img.complete && img.naturalWidth !== 0) {
-ctx.drawImage(img, 0, 0, w, h);
+if (canDraw(img)) {
+try { ctx.drawImage(img, 0, 0, w, h); } catch (e) { ctx.fillStyle = fallbackColor; ctx.fillRect(0, 0, w, h); }
 } else {
 ctx.fillStyle = fallbackColor;
 ctx.fillRect(0, 0, w, h);
 }
 } else {
-if (img.complete && img.naturalWidth !== 0) {
-ctx.drawImage(img, x, y, w, h);
+if (canDraw(img)) {
+try { ctx.drawImage(img, x, y, w, h); } catch (e) { ctx.fillStyle = fallbackColor; ctx.fillRect(x, y, w, h); }
 } else {
 ctx.fillStyle = fallbackColor;
 ctx.fillRect(x, y, w, h);
@@ -369,43 +375,42 @@ ctx.fillRect(x, y, w, h);
 }
 ctx.restore();
 }
-function drawButton(rect, text, img, bgColor = "#222") {
-if (img && img.complete && img.naturalWidth !== 0) {
+function drawButton(rect, text, img, bgColor) {
+if (canDraw(img)) {
+try {
 ctx.drawImage(img, rect.x, rect.y, rect.w, rect.h);
-} else {
-ctx.fillStyle = bgColor;
-ctx.beginPath();
-ctx.roundRect(rect.x, rect.y, rect.w, rect.h, 8);
-ctx.fill();
+return;
+} catch (e) {}
+}
+ctx.fillStyle = bgColor || "#222222";
+ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
 ctx.fillStyle = "#ffffff";
 ctx.font = "bold 20px system-ui, sans-serif";
 ctx.textAlign = "center";
 ctx.textBaseline = "middle";
 ctx.fillText(text, rect.x + rect.w / 2, rect.y + rect.h / 2);
 }
-}
 // 8. Main Render Loop
 function draw() {
 ctx.clearRect(0, 0, canvas.width, canvas.height);
 if (gameState === "TITLE") {
 const btns = getTitleButtons();
-drawButton(btns.play, "Play", playBtnImg);
-drawButton(btns.controls, "Controls", controlsBtnImg);
+drawButton(btns.play, "Play", playBtnImg, "#222222");
+drawButton(btns.controls, "Controls", controlsBtnImg, "#222222");
 if (showControls) {
 const cx = canvas.width / 2;
 const cy = canvas.height / 2 + 85;
 ctx.fillStyle = "#f4f4f4";
-ctx.strokeStyle = "#222";
+ctx.fillRect(cx - 180, cy, 360, 100);
+ctx.strokeStyle = "#222222";
 ctx.lineWidth = 2;
-ctx.beginPath();
-ctx.roundRect(cx - 180, cy, 360, 100, 10);
-ctx.fill();
-ctx.stroke();
-ctx.fillStyle = "#222";
+ctx.strokeRect(cx - 180, cy, 360, 100);
+ctx.fillStyle = "#222222";
 ctx.font = "16px system-ui, sans-serif";
 ctx.textAlign = "center";
-ctx.fillText("Move: WASD or Arrow Keys", cx, cy + 32);
-ctx.fillText("Bite: Spacebar (1s cooldown)", cx, cy + 62);
+ctx.textBaseline = "alphabetic";
+ctx.fillText("Move: WASD or Arrow Keys", cx, cy + 38);
+ctx.fillText("Bite: Spacebar (1s cooldown)", cx, cy + 70);
 }
 return;
 }
@@ -413,21 +418,23 @@ if (gameState === "SHOP") {
 const cx = canvas.width / 2;
 const cy = canvas.height / 2;
 const btns = getShopButtons();
-ctx.fillStyle = "#222";
+ctx.fillStyle = "#222222";
 ctx.font = "bold 28px system-ui, sans-serif";
 ctx.textAlign = "center";
-ctx.fillText(Wave ${wave} Complete! (+${wave} Points), cx, cy - 110);
+ctx.textBaseline = "alphabetic";
+ctx.fillText("Wave " + wave + " Complete! (+" + wave + " Points)", cx, cy - 110);
 ctx.font = "18px system-ui, sans-serif";
-ctx.fillText(Health: ${player.hp} / ${player.maxHp}   |   Points: ${points}, cx, cy - 70);
+ctx.fillText("Health: " + player.hp + " / " + player.maxHp + "   |   Points: " + points, cx, cy - 70);
 const canHeal = points >= 3 && player.hp < player.maxHp;
 const canMaxHp = points >= 5;
-drawButton(btns.heal, "Heal +5 HP (3 Pts)", null, canHeal ? "#222" : "#aaa");
-drawButton(btns.maxHp, "Max Health +3 HP (5 Pts)", null, canMaxHp ? "#222" : "#aaa");
+drawButton(btns.heal, "Heal +5 HP (3 Pts)", null, canHeal ? "#222222" : "#aaaaaa");
+drawButton(btns.maxHp, "Max Health +3 HP (5 Pts)", null, canMaxHp ? "#222222" : "#aaaaaa");
 drawButton(btns.next, "Start Next Wave", null, "#0969da");
 return;
 }
 // Draw Enemies
-for (let enemy of enemies) {
+for (let i = 0; i < enemies.length; i++) {
+const enemy = enemies[i];
 let eImg = enemyIdleImg;
 if (enemy.state === "ATTACK") eImg = enemyAttackImg;
 else if (enemy.state === "MOVE") eImg = enemyMoveImg;
@@ -437,21 +444,19 @@ drawSprite(eImg, enemy.x, enemy.y, enemy.width, enemy.height, enemy.facingLeft, 
 let pImg = idleImg;
 if (isBiting) pImg = biteFrames[biteIndex];
 else if (isMoving) pImg = walkImg;
-drawSprite(pImg, player.x, player.y, player.width, player.height, player.facingLeft, "#333");
+drawSprite(pImg, player.x, player.y, player.width, player.height, player.facingLeft, "#333333");
 // Draw Top-Left HUD
-ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
-ctx.strokeStyle = "#222";
+ctx.fillStyle = "rgba(255, 255, 255, 0.92)";
+ctx.fillRect(16, 16, 460, 42);
+ctx.strokeStyle = "#222222";
 ctx.lineWidth = 2;
-ctx.beginPath();
-ctx.roundRect(16, 16, 460, 42, 8);
-ctx.fill();
-ctx.stroke();
-ctx.fillStyle = "#222";
+ctx.strokeRect(16, 16, 460, 42);
+ctx.fillStyle = "#222222";
 ctx.font = "bold 15px system-ui, sans-serif";
 ctx.textAlign = "left";
 ctx.textBaseline = "middle";
-const biteText = player.biteCooldown > 0 ? Bite: ${(player.biteCooldown / 1000).toFixed(1)}s : "Bite: Ready";
-ctx.fillText(HP: ${player.hp}/${player.maxHp}   |   Wave: ${wave} (${enemies.length} left)   |   Pts: ${points}   |   ${biteText}, 28, 37);
+const biteText = player.biteCooldown > 0 ? "Bite: " + (player.biteCooldown / 1000).toFixed(1) + "s" : "Bite: Ready";
+ctx.fillText("HP: " + player.hp + "/" + player.maxHp + "   |   Wave: " + wave + " (" + enemies.length + " left)   |   Pts: " + points + "   |   " + biteText, 28, 37);
 }
 let lastTime = 0;
 function loop(timestamp) {
@@ -462,5 +467,3 @@ draw();
 requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);
-
-
